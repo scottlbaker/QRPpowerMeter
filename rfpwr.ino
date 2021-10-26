@@ -3,6 +3,10 @@
 //  rfpwr.ino :: Dummy-load and RF power meter
 //
 //  Copyright 2021  Scott Baker KJ7NLA
+//
+//  Note: This project uses the SSD1306Ascii library (version 1.3.0)
+//  which can be found at https://github.com/greiman/SSD1306Ascii
+//
 // ============================================================================
 
 #define VERSION   "1.01a"
@@ -16,6 +20,7 @@
 #include "SSD1306AsciiWire.h"
 
 #define I2C_ADDRESS 0x3C
+#define BAUDRATE    115200
 
 // user interface macros
 #define UIKEY !digitalRead(BUTTON)
@@ -27,16 +32,24 @@
 // diode voltage drop
 #define DVD .20
 
-// correction factor for AVCC = 5.0V
-// use this when using regulated power
-// #define VCF 209715
+// Convert accumulated ADC reading to a voltage value
+// ACF = (full-scale-ADC * number-of-samples)/10
+// ACF = (2048 * 1024)/10 = 209715
+// #define ACF 209715.0
 
-// correction factor for AVCC = 4.8V
-// use this when using USB power
-#define VCF ((209715 * 5.0) / 4.8);
+// correction factor for 5.0V reference
+// when AVCC = 5V then VCF = ACF
+// #define VCF 209715.0
+
+// correction factor for 4.8V reference
+// use this when when using USB power
+// VCF = ACF * (5.0/4.8)
+#define VCF 218453.0
 
 void  initpins();
 void  adc_init();
+void  hello();
+void  check_i2c();
 uint16_t adc_read();
 void  mydelay(uint16_t dly);
 void  show_version();
@@ -60,6 +73,30 @@ void adc_init() {
   ADCSRA = 0x87;         // adc_clock = cpu_clock/128
   ADCSRB = 0;            // clear ADCSRB register
   ADMUX  = 0x40;         // use AVCC (5V) reference
+}
+
+// Hello World
+void hello() {
+  Serial.begin(BAUDRATE);
+  Serial.println("RF Power Meter");
+  Serial.print("Version ");
+  Serial.print(VERSION);
+  Serial.print("\r\n\r\n");
+  check_i2c();
+}
+
+// Check the I2C connection
+void check_i2c() {
+  uint8_t err;
+  Wire.beginTransmission(I2C_ADDRESS);
+  err = Wire.endTransmission();
+  if (err == 0) {
+    Serial.print("I2C device OK at address ");
+  } else {
+    Serial.print("ERROR no device at address ");
+  }
+  Serial.print(I2C_ADDRESS, HEX);
+  Serial.print("\r\n\r\n");
 }
 
 // ADC read
@@ -135,11 +172,16 @@ float calc_vin(float vai) {
   return vin;
 }
 
+// power meter states
 #define STOPPED  0  // stopped
 #define RUNNING  1  // run/capture mode
 #define SPLASH   2  // initial state
 
 volatile uint8_t state = SPLASH;
+
+// RMS-corrected divider for
+// power calculation
+#define RMS (50 * 1.414)
 
 // calculate power
 void calc_power() {
@@ -148,7 +190,7 @@ void calc_power() {
   float pwr;     // calculated power
   vai = get_samples();
   vin = calc_vin(vai);
-  pwr = (vin * vin) / 50.0;
+  pwr = (vin * vin) / RMS;
   clearline(2);
   printV("ADC", vai, 'V');
   clearline(4);
@@ -220,6 +262,9 @@ void check_button() {
 void setup() {
   initpins();
   Wire.begin();
+  hello();
+
+
   Wire.setClock(400000L);
   oled.begin(&Adafruit128x64, I2C_ADDRESS);
   oled.setFont(fixed_bold10x15);
