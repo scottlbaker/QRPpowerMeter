@@ -32,6 +32,9 @@
 // diode voltage drop
 #define DVD .20
 
+// load resistance
+#define RLOAD 50
+
 // Convert accumulated ADC reading to a voltage value
 // ACF = (full-scale-ADC * number-of-samples)/10
 // ACF = (2048 * 1024)/10 = 209715
@@ -172,6 +175,14 @@ float calc_vin(float vai) {
   return vin;
 }
 
+// RMS multiplier for Vpp
+// calculation
+#define RMS 0.707
+
+float calc_vrms(float vpp) {
+  return vpp / 2 * RMS;
+}
+
 // power meter states
 #define STOPPED  0  // stopped
 #define RUNNING  1  // run/capture mode
@@ -179,22 +190,20 @@ float calc_vin(float vai) {
 
 volatile uint8_t state = SPLASH;
 
-// RMS-corrected divider for
-// power calculation
-#define RMS (50 * 1.414)
-
 // calculate power
 void calc_power() {
   float vai;     // average voltage at ADC input
   float vin;     // calculated input voltage
+  float vrms;    // calculated RMS voltage
   float pwr;     // calculated power
   vai = get_samples();
   vin = calc_vin(vai);
-  pwr = (vin * vin) / RMS;
+  vrms = calc_vrms(vin);
+  pwr = (vrms * vrms) / RLOAD;
   clearline(2);
   printV("ADC", vai, 'V');
   clearline(4);
-  printV("VIN", vin, 'V');
+  printV("RMS", vrms, 'V');
   clearline(6);
   printV("PWR", pwr, 'W');
   mydelay(2000);
